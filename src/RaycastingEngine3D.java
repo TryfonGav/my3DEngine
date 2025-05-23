@@ -21,6 +21,7 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
     int weaponFrame = 0;
     boolean showMenu = false;
     boolean hasKey = false;
+    int playerHealth = 100;
 
     TileType[][] map = new TileType[mapWidth][mapHeight];
     List<Enemy> enemies = new ArrayList<>();
@@ -50,6 +51,17 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
         new Thread(this).start();
     }
 
+    public RaycastingEngine3D(TileType[][] map, List<double[]> enemyList, double px, double py) {
+        this();
+        this.map = map;
+        this.playerX = px;
+        this.playerY = py;
+        this.enemies.clear();
+        for (double[] pos : enemyList) {
+            this.enemies.add(new Enemy(pos[0], pos[1]));
+        }
+    }
+
     void generateWorld() {
         for (int x = 0; x < mapWidth; x++) {
             for (int y = 0; y < mapHeight; y++) {
@@ -67,10 +79,9 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
             if (!showMenu) updateLogic();
             render3D();
             repaint();
-            try { Thread.sleep(16); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(50); } catch (InterruptedException ignored) {}
         }
     }
-
     void updateLogic() {
         if (keys[KeyEvent.VK_LEFT]) playerAngle -= rotSpeed;
         if (keys[KeyEvent.VK_RIGHT]) playerAngle += rotSpeed;
@@ -87,10 +98,23 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
             map[(int)playerX][(int)playerY] = TileType.FLOOR;
         }
         if (tile == TileType.POTION) {
+            playerHealth = Math.min(100, playerHealth + 25);
             map[(int)playerX][(int)playerY] = TileType.FLOOR;
         }
         if (tile == TileType.DOOR && hasKey) {
             map[(int)playerX][(int)playerY] = TileType.FLOOR;
+        }
+
+        for (Enemy e : enemies) {
+            if (e.health <= 0) continue;
+            double dist = Math.hypot(playerX - e.x, playerY - e.y);
+            if (dist < 0.8) {
+                playerHealth -= 1;
+            } else if (canSeePlayer(e)) {
+                e.moveToward(playerX, playerY, map);
+            } else {
+                e.wander(map);
+            }
         }
 
         if (shooting) {
@@ -108,6 +132,19 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
                 }
             }
         }
+    }
+
+    boolean canSeePlayer(Enemy e) {
+        double dx = playerX - e.x;
+        double dy = playerY - e.y;
+        double dist = Math.hypot(dx, dy);
+        double step = 0.05;
+        for (double d = 0; d < dist; d += step) {
+            int tx = (int)(e.x + dx * d / dist);
+            int ty = (int)(e.y + dy * d / dist);
+            if (map[tx][ty] == TileType.WALL) return false;
+        }
+        return true;
     }
 
     void tryMove(double nx, double ny) {
@@ -128,6 +165,7 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
             double eyeX = Math.cos(rayAngle), eyeY = Math.sin(rayAngle);
             double distance = 0;
             boolean hit = false;
+            TileType hitType = TileType.FLOOR;
 
             while (!hit && distance < depth) {
                 distance += 0.05;
@@ -137,17 +175,39 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
                 TileType tile = map[testX][testY];
                 if (tile == TileType.WALL || tile == TileType.DOOR) {
                     hit = true;
+                    hitType = tile;
                 }
             }
 
             int ceiling = (int)((screenHeight / 2.0) - screenHeight / distance);
             int floor = screenHeight - ceiling;
             int shade = Math.max(0, 255 - (int)(distance * 32));
-            buffer.setColor(new Color(shade, shade, shade));
+            buffer.setColor(hitType == TileType.DOOR ? new Color(0, 0, shade) : new Color(shade, shade, shade));
             buffer.drawLine(x, ceiling, x, floor);
-
-            buffer.setColor(new Color(40, 40, 40));
+            buffer.setColor(new Color(30, 30, 30));
             buffer.drawLine(x, floor, x, screenHeight);
+        }
+
+        // Draw potions and enemies as colored rectangles in pseudo-3D
+        for (Enemy e : enemies) {
+            if (e.health <= 0) continue;
+            double dx = e.x - playerX;
+            double dy = e.y - playerY;
+            double dist = Math.hypot(dx, dy);
+            double angleToSprite = Math.atan2(dy, dx) - playerAngle;
+            if (dist < depth && Math.abs(angleToSprite) < FOV / 2.0) {
+                int spriteSize = (int)(screenHeight / dist);
+                int x = (int)(screenWidth / 2 + Math.tan(angleToSprite) * screenWidth / (2 * Math.tan(FOV / 2))) - spriteSize / 2;
+                int y = screenHeight / 2 - spriteSize / 2;
+
+                buffer.setColor(new Color(255, 0, 0, 200));
+                buffer.fillRect(x, y, spriteSize, spriteSize);
+                buffer.setColor(Color.GREEN);
+                int barWidth = (int)(spriteSize * (e.health / 100.0));
+                buffer.fillRect(x, y - 5, barWidth, 4);
+                buffer.setColor(Color.BLACK);
+                buffer.drawRect(x, y - 5, spriteSize, 4);
+            }
         }
 
         // Weapon
@@ -183,7 +243,7 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
         // HUD
         buffer.setColor(Color.WHITE);
         buffer.setFont(new Font("Monospaced", Font.BOLD, 16));
-        buffer.drawString("WASD | ←/→ to Turn | SPACE = Shoot | ESC = Menu", 20, 30);
+        buffer.drawString("HP: " + playerHealth + " | Keys: " + (hasKey ? 1 : 0), 20, 30);
 
         if (showMenu) {
             buffer.setColor(new Color(0, 0, 0, 180));
@@ -231,9 +291,36 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
     static class Enemy {
         double x, y;
         int health = 100;
+        Random rand = new Random();
+
         Enemy(double x, double y) {
             this.x = x;
             this.y = y;
+        }
+
+        void moveToward(double tx, double ty, TileType[][] map) {
+            double dx = tx - x;
+            double dy = ty - y;
+            double dist = Math.hypot(dx, dy);
+            double step = 0.1;
+            double nx = x + (dx / dist) * step;
+            double ny = y + (dy / dist) * step;
+            if (map[(int)nx][(int)ny] != TileType.WALL) {
+                x = nx;
+                y = ny;
+            }
+        }
+
+        void wander(TileType[][] map) {
+            if (rand.nextDouble() < 0.1) {
+                double angle = rand.nextDouble() * 2 * Math.PI;
+                double nx = x + Math.cos(angle) * 0.1;
+                double ny = y + Math.sin(angle) * 0.1;
+                if (map[(int)nx][(int)ny] == TileType.FLOOR) {
+                    x = nx;
+                    y = ny;
+                }
+            }
         }
     }
 }

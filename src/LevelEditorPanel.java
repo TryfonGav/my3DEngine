@@ -2,80 +2,75 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.ArrayList;
+import java.util.List;
 
-public class LevelEditorPanel extends JPanel implements MouseListener {
-
-    final int tileSize = 32;
-    final int cols = 16, rows = 16;
-
-    boolean[][] walls = new boolean[cols][rows];
-    ArrayList<double[]> enemies = new ArrayList<>();
-    double playerX = -1, playerY = -1;
-
-    EditorTool currentTool = EditorTool.WALL;
+public class LevelEditorPanel extends JPanel {
+    public TileType[][] map = new TileType[16][16];
+    public List<double[]> enemies = new ArrayList<>();
+    public double playerX = 1, playerY = 1;
+    private EditorTool selectedTool = EditorTool.WALL;
 
     public LevelEditorPanel() {
-        setPreferredSize(new Dimension(cols * tileSize, rows * tileSize));
-        addMouseListener(this);
-    }
+        setPreferredSize(new Dimension(512, 512));
+        resetMap();
 
-    public void paintComponent(Graphics g) {
-        g.setColor(Color.BLACK);
-        g.fillRect(0, 0, getWidth(), getHeight());
+        addMouseListener(new MouseAdapter() {
+            public void mousePressed(MouseEvent e) {
+                int tileX = e.getX() / 32;
+                int tileY = e.getY() / 32;
+                if (tileX < 0 || tileX >= 16 || tileY < 0 || tileY >= 16) return;
 
-        // Grid
-        for (int x = 0; x < cols; x++) {
-            for (int y = 0; y < rows; y++) {
-                if (walls[x][y]) {
-                    g.setColor(Color.GRAY);
-                    g.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
-                } else {
-                    g.setColor(Color.DARK_GRAY);
-                    g.drawRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                switch (selectedTool) {
+                    case WALL -> map[tileX][tileY] = TileType.WALL;
+                    case FLOOR -> map[tileX][tileY] = TileType.FLOOR;
+                    case DOOR -> map[tileX][tileY] = TileType.DOOR;
+                    case KEY -> map[tileX][tileY] = TileType.KEY;
+                    case POTION -> map[tileX][tileY] = TileType.POTION;
+                    case ENEMY -> enemies.add(new double[]{tileX + 0.5, tileY + 0.5});
+                    case PLAYER -> {
+                        playerX = tileX + 0.5;
+                        playerY = tileY + 0.5;
+                    }
                 }
+
+                repaint();
             }
-        }
-
-        // Enemies
-        g.setColor(Color.RED);
-        for (double[] e : enemies) {
-            g.fillOval((int)(e[0] * tileSize), (int)(e[1] * tileSize), tileSize, tileSize);
-        }
-
-        // Player
-        if (playerX >= 0) {
-            g.setColor(Color.CYAN);
-            g.fillOval((int)(playerX * tileSize), (int)(playerY * tileSize), tileSize, tileSize);
-        }
+        });
     }
 
     public void setTool(EditorTool tool) {
-        currentTool = tool;
+        selectedTool = tool;
     }
 
-    public void mousePressed(MouseEvent e) {
-        int x = e.getX() / tileSize;
-        int y = e.getY() / tileSize;
-        if (x < 0 || y < 0 || x >= cols || y >= rows) return;
+    private void resetMap() {
+        for (int x = 0; x < 16; x++)
+            for (int y = 0; y < 16; y++)
+                map[x][y] = TileType.FLOOR;
+    }
 
-        switch (currentTool) {
-            case WALL -> walls[x][y] = !walls[x][y];
-            case ENEMY -> enemies.add(new double[]{x + 0.5, y + 0.5});
-            case PLAYER -> {
-                playerX = x + 0.5;
-                playerY = y + 0.5;
-            }
-            case EMPTY -> {
-                walls[x][y] = false;
-                enemies.removeIf(pos -> (int) pos[0] == x && (int) pos[1] == y);
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        for (int x = 0; x < 16; x++) {
+            for (int y = 0; y < 16; y++) {
+                switch (map[x][y]) {
+                    case WALL -> g.setColor(Color.DARK_GRAY);
+                    case FLOOR -> g.setColor(Color.LIGHT_GRAY);
+                    case DOOR -> g.setColor(Color.BLUE);
+                    case KEY -> g.setColor(Color.YELLOW);
+                    case POTION -> g.setColor(Color.GREEN);
+                }
+                g.fillRect(x * 32, y * 32, 32, 32);
+                g.setColor(Color.BLACK);
+                g.drawRect(x * 32, y * 32, 32, 32);
             }
         }
-        repaint();
-    }
 
-    // unused
-    public void mouseReleased(MouseEvent e) {}
-    public void mouseClicked(MouseEvent e) {}
-    public void mouseEntered(MouseEvent e) {}
-    public void mouseExited(MouseEvent e) {}
+        for (double[] e : enemies) {
+            g.setColor(Color.RED);
+            g.fillOval((int)((e[0] - 0.5) * 32), (int)((e[1] - 0.5) * 32), 32, 32);
+        }
+
+        g.setColor(Color.CYAN);
+        g.fillOval((int)((playerX - 0.5) * 32), (int)((playerY - 0.5) * 32), 32, 32);
+    }
 }

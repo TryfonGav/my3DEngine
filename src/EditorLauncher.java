@@ -1,16 +1,13 @@
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.*;
-import java.util.ArrayList;
 
 public class EditorLauncher {
-
     public static void main(String[] args) {
         JFrame f = new JFrame("Level Editor");
         LevelEditorPanel editor = new LevelEditorPanel();
 
         JPanel tools = new JPanel();
-        tools.setLayout(new GridLayout(1, 5));
+        tools.setLayout(new GridLayout(2, 4));
 
         for (EditorTool tool : EditorTool.values()) {
             JButton b = new JButton(tool.name());
@@ -19,17 +16,13 @@ public class EditorLauncher {
         }
 
         JButton play = new JButton("PLAY");
+        play.setBackground(Color.GREEN);
         play.addActionListener(e -> {
-            f.dispose(); // Close the editor window
-
+            f.dispose(); // Close editor
             RaycastingEngine3D game = new RaycastingEngine3D(
-                    editor.walls,
-                    editor.enemies,
-                    editor.playerX,
-                    editor.playerY
+                    editor.map, editor.enemies, editor.playerX, editor.playerY
             );
-
-            JFrame gameFrame = new JFrame("3D Game");
+            JFrame gameFrame = new JFrame("Raycasting 3D");
             gameFrame.setExtendedState(JFrame.MAXIMIZED_BOTH);
             gameFrame.setUndecorated(true);
             gameFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);

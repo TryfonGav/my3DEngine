@@ -1,3 +1,9 @@
 public enum EditorTool {
-    WALL, ENEMY, PLAYER, EMPTY
+    WALL,
+    FLOOR,
+    DOOR,
+    KEY,
+    POTION,
+    ENEMY,
+    PLAYER
 }
