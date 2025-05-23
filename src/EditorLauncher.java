@@ -1,36 +1,36 @@
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.*;
 
 public class EditorLauncher {
+
     public static void main(String[] args) {
         JFrame f = new JFrame("Level Editor");
         LevelEditorPanel editor = new LevelEditorPanel();
 
         JPanel tools = new JPanel();
-        tools.setLayout(new GridLayout(2, 4));
-
-        for (EditorTool tool : EditorTool.values()) {
-            JButton b = new JButton(tool.name());
-            b.addActionListener(e -> editor.setTool(tool));
+        tools.setLayout(new GridLayout(1, 5));
+        for (EditorTool t : EditorTool.values()) {
+            JButton b = new JButton(t.name());
+            b.addActionListener(e -> editor.setTool(t));
             tools.add(b);
         }
 
         JButton play = new JButton("PLAY");
-        play.setBackground(Color.GREEN);
         play.addActionListener(e -> {
-            f.dispose(); // Close editor
+            f.dispose(); // close editor
             RaycastingEngine3D game = new RaycastingEngine3D(
-                    editor.map, editor.enemies, editor.playerX, editor.playerY
+                    editor.walls,
+                    editor.enemies,
+                    editor.playerX,
+                    editor.playerY
             );
-            JFrame gameFrame = new JFrame("Raycasting 3D");
-            gameFrame.setExtendedState(JFrame.MAXIMIZED_BOTH);
-            gameFrame.setUndecorated(true);
-            gameFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-            gameFrame.setContentPane(game);
-            gameFrame.pack();
-            gameFrame.setVisible(true);
+            JFrame gf = new JFrame("3D Game");
+            gf.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+            gf.setContentPane(game);
+            gf.pack();
+            gf.setVisible(true);
         });
-
         tools.add(play);
 
         f.setLayout(new BorderLayout());
