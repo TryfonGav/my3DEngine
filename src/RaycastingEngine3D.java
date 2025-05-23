@@ -27,12 +27,12 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
     BufferedImage frame;
     Graphics2D buffer;
 
+    // === Default constructor ===
     public RaycastingEngine3D() {
         setPreferredSize(new Dimension(screenWidth, screenHeight));
         setFocusable(true);
         addKeyListener(this);
         addMouseListener(new MouseAdapter() {
-            @Override
             public void mousePressed(MouseEvent e) {
                 if (showMenu) {
                     int mx = e.getX(), my = e.getY();
@@ -43,11 +43,22 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
                 }
             }
         });
-
         frame = new BufferedImage(screenWidth, screenHeight, BufferedImage.TYPE_INT_RGB);
         buffer = frame.createGraphics();
         generateWorld();
         new Thread(this).start();
+    }
+
+    // === Editor-based constructor ===
+    public RaycastingEngine3D(boolean[][] map, List<double[]> enemyList, double px, double py) {
+        this(); // Call default constructor
+        this.world = map;
+        this.playerX = px;
+        this.playerY = py;
+        this.enemies.clear();
+        for (double[] pos : enemyList) {
+            this.enemies.add(new Enemy(pos[0], pos[1]));
+        }
     }
 
     void generateWorld() {
@@ -72,21 +83,17 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
     void updateLogic() {
         if (keys[KeyEvent.VK_LEFT]) playerAngle -= rotSpeed;
         if (keys[KeyEvent.VK_RIGHT]) playerAngle += rotSpeed;
-
         double dx = Math.cos(playerAngle) * moveSpeed;
         double dy = Math.sin(playerAngle) * moveSpeed;
-
         if (keys[KeyEvent.VK_W]) tryMove(playerX + dx, playerY + dy);
         if (keys[KeyEvent.VK_S]) tryMove(playerX - dx, playerY - dy);
 
         if (shooting) {
             shooting = false;
             weaponFrame = 5;
-
-            double fx, fy;
             for (double d = 0; d < 5; d += 0.05) {
-                fx = playerX + Math.cos(playerAngle) * d;
-                fy = playerY + Math.sin(playerAngle) * d;
+                double fx = playerX + Math.cos(playerAngle) * d;
+                double fy = playerY + Math.sin(playerAngle) * d;
                 for (Enemy e : enemies) {
                     if (e.health > 0 && Math.hypot(e.x - fx, e.y - fy) < 0.4) {
                         e.health -= 25;
@@ -132,12 +139,10 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
             buffer.drawLine(x, ceiling, x, floor);
         }
 
-        // === Enemies (occluded) ===
+        // === Enemies with occlusion check ===
         for (Enemy e : enemies) {
             if (e.health <= 0) continue;
-
-            double dx = e.x - playerX;
-            double dy = e.y - playerY;
+            double dx = e.x - playerX, dy = e.y - playerY;
             double dist = Math.sqrt(dx * dx + dy * dy);
             double angleToSprite = Math.atan2(dy, dx) - playerAngle;
 
@@ -169,7 +174,7 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
             }
         }
 
-        // === Weapon sprite (raised)
+        // === Weapon (raised)
         int gunHeight = screenHeight - 160;
         buffer.setColor(weaponFrame > 0 ? Color.ORANGE : Color.GRAY);
         buffer.fillRect((screenWidth - 100) / 2, gunHeight, 100, 100);
@@ -196,12 +201,10 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
             }
         }
 
-        // === HUD
         buffer.setColor(Color.WHITE);
         buffer.setFont(new Font("Monospaced", Font.BOLD, 16));
         buffer.drawString("WASD | ←/→ = Turn | SPACE = Shoot | ESC = Menu", 20, 30);
 
-        // === ESC Menu
         if (showMenu) {
             buffer.setColor(new Color(0, 0, 0, 180));
             buffer.fillRect(screenWidth / 2 - 150, screenHeight / 2 - 100, 300, 200);
