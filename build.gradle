@@ -1,0 +1,28 @@
+plugins {
+    id 'java'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    implementation 'com.google.code.gson:gson:2.10.1'
+}
+
+tasks.withType(Test) {
+    useJUnitPlatform()
+    // Run tests in headless mode for Swing/AWT compatibility on CI
+    systemProperty 'java.awt.headless', 'true'
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}

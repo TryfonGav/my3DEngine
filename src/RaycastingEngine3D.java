@@ -12,7 +12,9 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
     final int mapWidth = 16, mapHeight = 16;
     final double FOV = Math.PI / 3;
     final double depth = 16;
-    final int numRays = screenWidth;
+    final double MOVE_STEP = 0.01; // ray march step
+    final int RENDER_SCALE = 2; // render at (width/RENDER_SCALE) rays
+    final int WEAPON_FRAME_DURATION = 5;
 
     double playerX = 3.5, playerY = 3.5, playerAngle = 0;
     double moveSpeed = 0.08, rotSpeed = 0.04;
@@ -26,11 +28,21 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
 
     BufferedImage frame;
     Graphics2D buffer;
+    private volatile boolean running = false;
+    private Thread gameThread;
 
     // === Default constructor ===
     public RaycastingEngine3D() {
         setPreferredSize(new Dimension(screenWidth, screenHeight));
         setFocusable(true);
+        addComponentListener(new ComponentAdapter() {
+            public void componentResized(ComponentEvent e) {
+                int w = Math.max(1, getWidth());
+                int h = Math.max(1, getHeight());
+                frame = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+                buffer = frame.createGraphics();
+            }
+        });
         addKeyListener(this);
         addMouseListener(new MouseAdapter() {
             public void mousePressed(MouseEvent e) {
@@ -46,18 +58,20 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
         frame = new BufferedImage(screenWidth, screenHeight, BufferedImage.TYPE_INT_RGB);
         buffer = frame.createGraphics();
         generateWorld();
-        new Thread(this).start();
+        // Thread is started explicitly via start() so caller controls lifecycle
     }
 
     // === Editor-based constructor ===
-    public RaycastingEngine3D(boolean[][] map, List<double[]> enemyList, double px, double py) {
+    public RaycastingEngine3D(boolean[][] map, List<Enemy> enemyList, double px, double py) {
         this(); // Call default constructor
         this.world = map;
         this.playerX = px;
         this.playerY = py;
         this.enemies.clear();
-        for (double[] pos : enemyList) {
-            this.enemies.add(new Enemy(pos[0], pos[1]));
+        if (enemyList != null) {
+            for (Enemy pos : enemyList) {
+                this.enemies.add(new Enemy(pos.x, pos.y));
+            }
         }
     }
 
@@ -72,12 +86,24 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
     }
 
     public void run() {
-        while (true) {
+        while (running) {
             if (!showMenu) updateLogic();
             render3D();
             repaint();
-            try { Thread.sleep(16); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(16); } catch (InterruptedException ignored) { break; }
         }
+    }
+
+    public void start() {
+        if (running) return;
+        running = true;
+        gameThread = new Thread(this, "GameLoop");
+        gameThread.start();
+    }
+
+    public void stop() {
+        running = false;
+        if (gameThread != null) gameThread.interrupt();
     }
 
     void updateLogic() {
@@ -90,7 +116,7 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
 
         if (shooting) {
             shooting = false;
-            weaponFrame = 5;
+            weaponFrame = WEAPON_FRAME_DURATION;
             for (double d = 0; d < 5; d += 0.05) {
                 double fx = playerX + Math.cos(playerAngle) * d;
                 double fy = playerY + Math.sin(playerAngle) * d;
@@ -107,6 +133,7 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
 
     void tryMove(double nx, double ny) {
         int mx = (int) nx, my = (int) ny;
+        if (mx < 0 || my < 0 || mx >= mapWidth || my >= mapHeight) return;
         if (!world[mx][my]) {
             playerX = nx;
             playerY = ny;
@@ -117,26 +144,30 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
         buffer.setColor(Color.BLACK);
         buffer.fillRect(0, 0, screenWidth, screenHeight);
 
-        for (int x = 0; x < numRays; x++) {
-            double rayAngle = (playerAngle - FOV / 2.0) + (x * FOV / numRays);
+        int sw = frame.getWidth();
+        int sh = frame.getHeight();
+        int rays = Math.max(1, sw / RENDER_SCALE);
+        for (int x = 0; x < rays; x++) {
+            double rayAngle = (playerAngle - FOV / 2.0) + (x * FOV / rays);
             double eyeX = Math.cos(rayAngle), eyeY = Math.sin(rayAngle);
             double distanceToWall = 0;
             boolean hitWall = false;
-
             while (!hitWall && distanceToWall < depth) {
-                distanceToWall += 0.01;
+                distanceToWall += MOVE_STEP;
                 int testX = (int)(playerX + eyeX * distanceToWall);
                 int testY = (int)(playerY + eyeY * distanceToWall);
                 if (testX < 0 || testY < 0 || testX >= mapWidth || testY >= mapHeight) break;
                 if (world[testX][testY]) hitWall = true;
             }
 
-            int ceiling = (int)((screenHeight / 2.0) - screenHeight / distanceToWall);
-            int floor = screenHeight - ceiling;
+            if (distanceToWall <= 0) distanceToWall = 0.0001; // clamp small distances to avoid div-by-zero
+
+            int ceiling = (int)((sh / 2.0) - sh / distanceToWall);
+            int floor = sh - ceiling;
             int shade = (int)(255 / (1 + distanceToWall * distanceToWall * 0.1));
             shade = Math.max(0, Math.min(255, shade));
             buffer.setColor(new Color(shade, shade, shade));
-            buffer.drawLine(x, ceiling, x, floor);
+            buffer.fillRect(x * RENDER_SCALE, ceiling, RENDER_SCALE, Math.max(1, floor - ceiling));
         }
 
         // === Enemies with occlusion check ===
@@ -159,9 +190,9 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
                 }
 
                 if (dist < wallDist - 0.2) {
-                    int spriteSize = (int)(screenHeight / dist);
-                    int x = (int)(screenWidth / 2 + Math.tan(angleToSprite) * screenWidth / (2 * Math.tan(FOV / 2))) - spriteSize / 2;
-                    int y = screenHeight / 2 - spriteSize / 2;
+                    int spriteSize = (int)(sh / dist);
+                    int x = (int)(sw / 2 + Math.tan(angleToSprite) * sw / (2 * Math.tan(FOV / 2))) - spriteSize / 2;
+                    int y = sh / 2 - spriteSize / 2;
 
                     buffer.setColor(new Color(255, 0, 0, 200));
                     buffer.fillRect(x, y, spriteSize, spriteSize);
@@ -175,14 +206,14 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
         }
 
         // === Weapon (raised)
-        int gunHeight = screenHeight - 160;
+        int gunHeight = sh - 160;
         buffer.setColor(weaponFrame > 0 ? Color.ORANGE : Color.GRAY);
-        buffer.fillRect((screenWidth - 100) / 2, gunHeight, 100, 100);
+        buffer.fillRect((sw - 100) / 2, gunHeight, 100, 100);
         if (weaponFrame > 0) weaponFrame--;
 
         // === Minimap (top right)
         int miniTile = 8;
-        int miniX = screenWidth - (mapWidth * miniTile) - 20;
+        int miniX = sw - (mapWidth * miniTile) - 20;
         int miniY = 20;
         for (int mx = 0; mx < mapWidth; mx++) {
             for (int my = 0; my < mapHeight; my++) {
@@ -207,12 +238,12 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
 
         if (showMenu) {
             buffer.setColor(new Color(0, 0, 0, 180));
-            buffer.fillRect(screenWidth / 2 - 150, screenHeight / 2 - 100, 300, 200);
+            buffer.fillRect(sw / 2 - 150, sh / 2 - 100, 300, 200);
             buffer.setColor(Color.WHITE);
             buffer.setFont(new Font("Monospaced", Font.BOLD, 24));
-            buffer.drawString("PAUSED", screenWidth / 2 - 60, screenHeight / 2 - 40);
-            buffer.drawRect(screenWidth / 2 - 75, screenHeight / 2, 150, 40);
-            buffer.drawString("EXIT GAME", screenWidth / 2 - 65, screenHeight / 2 + 28);
+            buffer.drawString("PAUSED", sw / 2 - 60, sh / 2 - 40);
+            buffer.drawRect(sw / 2 - 75, sh / 2, 150, 40);
+            buffer.drawString("EXIT GAME", sw / 2 - 65, sh / 2 + 28);
         }
     }
 
@@ -221,10 +252,11 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
     }
 
     public void keyPressed(KeyEvent e) {
-        keys[e.getKeyCode()] = true;
+        int code = e.getKeyCode();
+        if (code >= 0 && code < keys.length) keys[code] = true;
         if (e.getKeyCode() == KeyEvent.VK_SPACE && !showMenu) {
             shooting = true;
-            weaponFrame = 5;
+            weaponFrame = WEAPON_FRAME_DURATION;
         }
         if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
             showMenu = !showMenu;
@@ -232,7 +264,8 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
     }
 
     public void keyReleased(KeyEvent e) {
-        keys[e.getKeyCode()] = false;
+        int code = e.getKeyCode();
+        if (code >= 0 && code < keys.length) keys[code] = false;
     }
 
     public void keyTyped(KeyEvent e) {}
@@ -246,14 +279,6 @@ public class RaycastingEngine3D extends JPanel implements KeyListener, Runnable 
         frame.setContentPane(game);
         frame.pack();
         frame.setVisible(true);
-    }
-
-    static class Enemy {
-        double x, y;
-        int health = 100;
-        Enemy(double x, double y) {
-            this.x = x;
-            this.y = y;
-        }
+        game.start();
     }
 }
